@@ -1,0 +1,15 @@
+llama.cpp-srhpm/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.gguf
+*.log
+*.exe
+*.dll
+*.lib
+*.exp
+*.so
+paper/*.aux
+paper/*.log
+paper/*.out
+bench/bench_*.log

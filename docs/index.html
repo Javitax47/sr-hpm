@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SR-HPM — dense LLMs bigger than your GPU, 3.6× faster</title>
+<meta name="description" content="SR-HPM: a llama.cpp patch and launcher that verify speculative drafts on the CPU, taking a 27B dense model on a 6 GB laptop GPU from 2.7 to ~10 tokens per second with identical output.">
+<style>
+:root{--bg:#fbfbfd;--fg:#1a202c;--muted:#5a6475;--card:#fff;--line:#e3e7ee;--accent:#2b6cb0;--accent2:#d69e2e;--code:#f1f4f8}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1218;--fg:#e6e9ef;--muted:#9aa3b2;--card:#171b23;--line:#272d38;--accent:#63a4ff;--accent2:#f0b44c;--code:#1d222c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+header{padding:56px 0 24px}
+h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:0 0 12px}
+h1 span{color:var(--accent)}
+.lede{font-size:clamp(17px,2.2vw,20px);color:var(--muted);max-width:760px;margin:0}
+.btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.btn{display:inline-block;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;border:1px solid var(--line);color:var(--fg);background:var(--card)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+section{padding:28px 0;border-top:1px solid var(--line)}
+h2{font-size:24px;margin:0 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+.big{font-size:34px;font-weight:700;color:var(--accent);line-height:1.1}
+.small{color:var(--muted);font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tbl{overflow-x:auto}
+pre{background:var(--code);padding:14px 16px;border-radius:10px;overflow-x:auto;font-size:14px}
+code{font-family:ui-monospace,Consolas,monospace}
+svg text{fill:var(--fg)}
+.bar{fill:var(--accent)} .bar.lossy{fill:var(--accent2)} .bar.base{fill:var(--muted)}
+ol li,ul li{margin:6px 0}
+footer{padding:32px 0 48px;color:var(--muted);font-size:14px;border-top:1px solid var(--line)}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Dense LLMs bigger than your GPU, <span>3.6× faster</span></h1>
+  <p class="lede">SR-HPM is a llama.cpp patch and a launcher that make speculative decoding pay off when most of a
+  model lives in system RAM. A 27B dense model on a 6&nbsp;GB laptop GPU goes from <b>2.7</b> to <b>~10</b>
+  tokens per second, with exactly the same output.</p>
+  <div class="btns">
+    <a class="btn primary" href="https://github.com/Javitax47/sr-hpm">Code on GitHub</a>
+    <a class="btn" href="srhpm.pdf">Paper (PDF)</a>
+    <a class="btn" href="#install">Install</a>
+  </div>
+</header>
+
+<section>
+  <h2>Results</h2>
+  <div class="grid">
+    <div class="card"><div class="big">9.6–10.2</div><div class="small">tok/s, Qwen3.8-27B on RTX 3060 Laptop 6 GB + Ryzen 7 5800H (stock llama.cpp: 2.7)</div></div>
+    <div class="card"><div class="big">0</div><div class="small">extra quality loss: greedy output identical to non-speculative decoding</div></div>
+    <div class="card"><div class="big">1.18×</div><div class="small">cost of verifying 4 tokens vs 1 on the CPU (llama.cpp: 2.1–2.7×)</div></div>
+    <div class="card"><div class="big">~20</div><div class="small">ideas that did <i>not</i> work, each with the experiment that refuted it</div></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <svg viewBox="0 0 900 300" width="100%" role="img" aria-label="Decode speed as components are added">
+      <g font-size="13" text-anchor="middle">
+        <line x1="40" y1="250" x2="890" y2="250" stroke="currentColor" opacity=".25"/>
+        <rect class="bar base" x="55"  y="196" width="70" height="54"/><text x="90"  y="188">2.7</text><text x="90"  y="270">stock +</text><text x="90"  y="286">DFlash2</text>
+        <rect class="bar" x="150" y="136" width="70" height="114"/><text x="185" y="128">5.7</text><text x="185" y="270">SRV</text><text x="185" y="286">kernels</text>
+        <rect class="bar" x="245" y="115" width="70" height="135"/><text x="280" y="107">6.8</text><text x="280" y="270">GPU layer</text><text x="280" y="286">range</text>
+        <rect class="bar" x="340" y="105" width="70" height="145"/><text x="375" y="97">7.2</text><text x="375" y="270">offload</text><text x="375" y="286">fix</text>
+        <rect class="bar" x="435" y="87"  width="70" height="163"/><text x="470" y="79">8.1</text><text x="470" y="270">C4</text>
+        <rect class="bar" x="530" y="78"  width="70" height="172"/><text x="565" y="70">8.6</text><text x="565" y="270">in-place</text><text x="565" y="286">snapshots</text>
+        <rect class="bar" x="625" y="56"  width="70" height="194"/><text x="660" y="48">9.7</text><text x="660" y="270">adaptive draft,</text><text x="660" y="286">lazy GDN…</text>
+        <rect class="bar" x="720" y="50"  width="70" height="200"/><text x="755" y="42">10.0</text><text x="755" y="270">quant +</text><text x="755" y="286">dGPU</text>
+        <rect class="bar lossy" x="815" y="42" width="70" height="208"/><text x="850" y="34">10.4</text><text x="850" y="270">relaxed</text><text x="850" y="286">(opt-in)</text>
+      </g>
+    </svg>
+    <div class="small">Decode speed (tok/s) as components are added. Every blue bar produces the model's exact greedy output; the last one trades 0.018 nats/token for +6&nbsp;%.</div>
+  </div>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <p>Decoding a model that does not fit in VRAM is bound by reading the CPU-side weights from RAM once per token.
+  Speculative decoding verifies several drafted tokens per pass — but only helps if verifying <i>M</i> tokens costs
+  about as much as one. SR-HPM makes that true on the CPU and then removes every other cost it could measure:</p>
+  <ol>
+    <li><b>Small-batch CPU kernels.</b> Each weight block is decoded once and applied to all drafted tokens, with a lossless 4-bit re-encoding of IQ3 weights (one <code>pshufb</code> instead of grid lookups) and sign-free paths for offset-coded types.</li>
+    <li><b>Cost-aware placement.</b> The GPU gets the layers with the highest CPU cost per byte, plus the output head the drafter shares.</li>
+    <li><b>Adaptive drafting.</b> Keep 3 drafted tokens, extend to 7 while the drafter is confident.</li>
+    <li><b>Lazy rollback for hybrid recurrent models.</b> Two full states per pass plus exact rank-1 replay, and a split prompt path that keeps them exact at GPU speed (prefill +35&nbsp;%).</li>
+    <li><b>The idle GPU helps verify.</b> It computes a share of the CPU layers' rows, reading them straight from RAM over PCIe.</li>
+    <li><b>System details that add up.</b> GPU keep-alive, 2&nbsp;MB pages, op-offload fix, re-quantization tuned to what the kernels read fastest.</li>
+  </ol>
+  <div class="tbl"><table>
+    <tr><th>Configuration</th><th>Decode</th><th>Quality loss vs Q8_0</th></tr>
+    <tr><td>stock llama.cpp + DFlash2 drafter</td><td>2.7 tok/s</td><td>KLD 0.043</td></tr>
+    <tr><td><b>SR-HPM</b> (exact)</td><td><b>9.6–10.2 tok/s</b></td><td>KLD 0.043</td></tr>
+    <tr><td>SR-HPM + <code>--relax 1.0</code> (opt-in)</td><td>~10.4 tok/s</td><td>+0.018 nats/token</td></tr>
+  </table></div>
+</section>
+
+<section id="install">
+  <h2>Install and run</h2>
+  <p>Windows (Visual Studio 2022 C++ tools, CMake, Git, Python; optional CUDA 12 and LLVM):</p>
+<pre><code>git clone https://github.com/Javitax47/sr-hpm
+cd sr-hpm
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
+python -m srhpm.launch model.gguf --draft drafter.gguf --run</code></pre>
+  <p>Linux:</p>
+<pre><code>git clone https://github.com/Javitax47/sr-hpm &amp;&amp; cd sr-hpm
+bash scripts/install_linux.sh
+python3 -m srhpm.launch model.gguf --draft drafter.gguf --run</code></pre>
+  <p>The launcher reads the model and the machine, picks the plan (all-GPU, MoE or SR-HPM), and starts an
+  OpenAI-compatible server on <code>127.0.0.1:8080</code>. Works with any dense GGUF model; the large gains need a
+  drafter (DFlash/DFlash2 or a small model of the same family).</p>
+</section>
+
+<section>
+  <h2>What did not work</h2>
+  <p>Half of the project is negative results — each idea was attacked first with the cheapest experiment that could
+  refute it. A few:</p>
+  <ul>
+    <li>Draft trees: ≤ +3&nbsp;% with the real cost curve; on recurrent models a second chain duplicates the prefix.</li>
+    <li>2-bit CPU layers: more quality loss (KLD 0.094) <i>and</i> slower — grid decoding is compute-bound.</li>
+    <li>Activation sparsity with a pass-shared mask: skipping 10&nbsp;% of weight blocks costs 5–10× the quantization error.</li>
+    <li>Dropping redundant layers: two layers already more than double the KLD.</li>
+    <li>Reranking the drafter's 16 candidates without training: the right token is there, but telling which costs as much as verifying it.</li>
+  </ul>
+  <p>The full list, with numbers and scripts, is in the <a href="srhpm.pdf">paper</a> and in
+  <a href="https://github.com/Javitax47/sr-hpm/tree/main/research">research/</a>.</p>
+</section>
+
+<footer>
+  SR-HPM · MIT license · built on <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> ·
+  developed with the assistance of an AI coding agent.
+</footer>
+</div>
+</body>
+</html>

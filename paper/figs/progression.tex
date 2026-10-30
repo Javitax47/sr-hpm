@@ -1,0 +1,12 @@
+% Decode speed progression (research/notes/README_F5.md progression table, README_F6.md final rounds)
+\begin{tikzpicture}
+\begin{axis}[ybar, width=\linewidth, height=5.4cm, bar width=12pt, ymin=0, ymax=12.5, ylabel={decode (tok/s)},
+  symbolic x coords={a,b,c,d,e,f,g,h,i}, xtick=data, enlarge x limits=0.07,
+  xticklabels={{stock\\+DFlash2},{SRV\\kernels},{GPU layers\\+head},{offload\\fix},{C4},{in-place\\snapshots},
+               {F6\\batch},{quant\\+dGPU},{relaxed\\(lossy)}},
+  xticklabel style={align=center, font=\scriptsize}, nodes near coords, nodes near coords style={font=\scriptsize},
+  every node near coord/.append style={/pgf/number format/.cd, fixed, precision=1}, axis x line*=bottom,
+  axis y line*=left]
+\addplot[fill=blue!55!black!70, draw=none] coordinates {(a,2.70) (b,5.72) (c,6.77) (d,7.23) (e,8.13) (f,8.62) (g,9.70) (h,10.0) (i,10.4)};
+\end{axis}
+\end{tikzpicture}

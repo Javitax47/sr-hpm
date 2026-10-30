@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "srhpm"
+version = "1.0.0"
+description = "Launcher and tools for SR-HPM: fast decoding of dense LLMs larger than GPU memory (llama.cpp patch)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = ["gguf>=0.10", "numpy>=1.24", "psutil>=5.9"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+srhpm-launch = "srhpm.launch:main"
+srhpm-requant = "srhpm.requant:main"
+srhpm-placement = "srhpm.placement:main"
+
+[tool.setuptools]
+packages = ["srhpm"]
