@@ -241,9 +241,39 @@ products (IQ4\_XS 55\%, Q3\_K 27\%), 10\% to other CPU ops (recurrent op 4\%), a
 drafter (11\,ms), feature injection (2\,ms) and fixed overheads. The pass time grows from 0.34\,s at $M=4$ to
 0.51\,s at $M=8$ (Figure~\ref{fig:cost}).
 
-\paragraph{Long contexts and prose.} The pass time does not grow with context up to 4.8k tokens. On summaries of
-Spanish prose the drafter's acceptance falls to 0.45--0.58 and decoding to ${\sim}6$\,\tps{} on the same hardware:
-SR-HPM's gains scale with the drafter's quality.
+\paragraph{Prose.} On summaries of Spanish prose the drafter's acceptance falls to 0.45--0.58 and decoding to
+${\sim}6$\,\tps{} on the same hardware: SR-HPM's gains scale with the drafter's quality.
+
+\paragraph{Context window.} The pass time does not grow with context up to 4.8k tokens, but it does beyond.
+Table~\ref{tab:ctx} measures windows up to the model's 262k tokens. A q8 KV cache is free in quality (KLD to Q8\_0
+0.0428 vs 0.0430 with f16) and halves the cache; kept in system RAM it takes no VRAM from the model's layers. Merely
+configuring a large window costs 10\% at 32--128k and 32\% at 262k, where the drafter's own cache exhausts the VRAM.
+Filling it costs much more: with 100k tokens in context each generated token takes ${\sim}2$\,s, because attention over
+the whole cache runs on the CPU for every verified token. Long-context attention, not the weights, then becomes the
+bottleneck; making it memory-flat across the verified tokens is the natural next step.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lcc}
+\toprule
+Tokens in context (128k window, q8 cache in RAM) & time to first token & decode (\tps) \\
+\midrule
+9.7k & 57\,s & 3.4 \\
+36k & 3.6\,min & 1.5 \\
+63k & 6.6\,min & 0.7 \\
+100k & 11\,min & 0.5 \\
+190k (262k window) & 29\,min & 0.24 \\
+\bottomrule
+\end{tabular}
+\caption{Long prompts (summaries of Spanish text, where the drafter is weak). Prompt processing stays at
+110--170\,\tps; decode degrades with the tokens actually in context, not with the configured window.}
+\label{tab:ctx}
+\end{table}
+
+\paragraph{Sampling and thinking.} All other numbers are greedy. At temperature~1 (top-$k$ 20, top-$p$ 0.95) decode
+drops 9\% (9.6$\to$8.8\,\tps) as sampled tokens match the drafter less often. Probabilistic drafting with rejection
+verification, which keeps the sampled distribution exact, does not recover it (8.8--9.0). With the model's reasoning
+mode on, 7.5\,\tps.
 
 \paragraph{Generality.} Nothing in the kernels or the launcher is specific to Qwen: the launcher reads any GGUF,
 chooses between all-GPU, MoE and SR-HPM paths, and places layers by the measured cost of their tensor types. MoE models
@@ -281,6 +311,7 @@ Layer dropping & 2 layers: KLD 0.043$\to$0.108 \\
 Exact output head on a vocabulary subset & the bound adds 60--95 logits; 97--100\% of the head is read \\
 Small ops on one thread, fewer barriers & same speed; cache misses, not barriers \\
 N-gram retrieval drafting & never fires on chat or summaries (paraphrase) \\
+Probabilistic drafting at temperature 1 & 8.8--9.0 vs 8.8\,\tps{} with greedy drafting \\
 More GPU layers in spare VRAM & below ${\sim}0.4$\,GB free, WDDM slows everything down \\
 \bottomrule
 \end{tabular}
@@ -303,6 +334,7 @@ residual stream are ${\sim}16\times$ more sensitive per unit of weighted error.
 
 The fast kernels need x86-64 with AVX2; VNNI and AMX machines and ARM are untested. Rollback assumes one sequence,
 so concurrent requests are queued rather than batched, and prompt processing is slower than in stock llama.cpp.
+Decode degrades steeply beyond ${\sim}10$k tokens of context, where CPU attention over the cache dominates.
 The dGPU co-verifier is implemented for Windows and CUDA. All measurements are on one laptop; desktop CPUs with DDR5
 and more VRAM shift the balance (more layers on the GPU, more bandwidth), and Linux frees ${\sim}1$\,GB of VRAM
 that WDDM reserves. The two levers left with large margins require training, which is outside the scope of a tool

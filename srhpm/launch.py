@@ -66,7 +66,7 @@ def inspect(path: str) -> dict:
 
 
 def plan(model: str, draft: str | None, ctx: int, host: Host, retrieval: bool = False,
-         server: str = "") -> tuple[dict, list[str], str]:
+         server: str = "", kv_type: str = "f16", kv_ram: bool = False) -> tuple[dict, list[str], str]:
     vram, ram = host.vram_free_gib, host.ram_gib
     mi = inspect(model)
     di = inspect(draft) if draft else None
@@ -76,8 +76,15 @@ def plan(model: str, draft: str | None, ctx: int, host: Host, retrieval: bool = 
     weights = mi["bytes"] / GIB
     draft_gib = (di["bytes"] / GIB) if di else 0.0
     # KV cache + recurrent state + compute buffers on the GPU (measured: ~0.3 GiB at 4k context for Qwen3.8-27B
-    # with 20 GPU layers and a DFlash drafter with --spec-draft-n-ubatch 16)
-    kv_gib = 0.15 + 0.015 * ctx / 1024
+    # with 20 GPU layers and a DFlash drafter with --spec-draft-n-ubatch 16). With --kv-ram the KV cache stays in
+    # system RAM, so long contexts do not take VRAM away from the model's layers
+    kv_scale = {"f16": 1.0, "q8_0": 0.53, "q4_0": 0.28}.get(kv_type, 1.0)
+    # (with --kv-ram, keep the margin of an 8k f16 cache: the compute buffers still grow with the batch)
+    kv_gib = 0.15 + (0.015 * 8 if kv_ram else 0.015 * kv_scale * ctx / 1024)
+    if kv_type != "f16":
+        args += ["-ctk", kv_type, "-ctv", kv_type]
+    if kv_ram:
+        args += ["-nkvo"]
     if weights + draft_gib + kv_gib <= vram:
         args += ["-ngl", "99"]
         why = f"fits in VRAM ({weights:.1f} of {vram:.1f} GiB): everything on the GPU"
@@ -154,6 +161,13 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--retrieval", action="store_true", help="n-gram retrieval from the context before the drafter")
+    ap.add_argument("--draft-sampling", choices=["greedy", "probabilistic"], default="greedy",
+                    help="probabilistic: the DFlash2 drafter samples and the target verifies by rejection, which keeps "
+                         "the sampled distribution exact and accepts more drafts at temperature > 0")
+    ap.add_argument("--draft-max", type=int, default=None, help="override the maximum draft length")
+    ap.add_argument("--kv-type", choices=["f16", "q8_0", "q4_0"], default="f16",
+                    help="KV cache precision (q8_0 halves its memory for long contexts)")
+    ap.add_argument("--kv-ram", action="store_true", help="keep the whole KV cache in system RAM (no VRAM for context)")
     ap.add_argument("--relax", type=float, default=0.0,
                     help="lossy: also accept a drafted token within this many nats of the target's best (1.0: +6 %% "
                          "tok/s for ~0.02 nats per token; the 3-4 bit quantization itself costs ~0.04)")
@@ -164,9 +178,14 @@ def main():
     host = detect()
     if a.vram_gib is not None:
         host.vram_free_gib = a.vram_gib
-    env, args, why = plan(a.model, a.draft, a.ctx, host, a.retrieval, server)
+    env, args, why = plan(a.model, a.draft, a.ctx, host, a.retrieval, server, a.kv_type, a.kv_ram)
     if a.relax > 0 and a.draft:
         env["SRHPM_RELAX"] = str(a.relax)
+    if a.draft and a.draft_sampling == "probabilistic":
+        args += ["--spec-draft-sampling", "probabilistic"]
+    if a.draft and a.draft_max is not None:
+        i = args.index("--spec-draft-n-max")
+        args[i + 1] = str(a.draft_max)
     args += ["--host", a.host, "--port", str(a.port)]
     print(f"# {why}", file=sys.stderr)
     print(f"# host: {host.os}, usable VRAM {host.vram_free_gib:.1f} GiB, RAM {host.ram_gib:.0f} GiB, {host.cores} cores, "

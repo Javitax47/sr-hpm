@@ -37,6 +37,8 @@ def main():
     ap.add_argument("--first", type=int, default=0)
     ap.add_argument("--max-tokens", type=int, default=200)
     ap.add_argument("--label", default="")
+    ap.add_argument("--temp", type=float, default=0.0, help="0 = greedy; > 0 samples with top-k 20, top-p 0.95, min-p 0.05")
+    ap.add_argument("--think", action="store_true", help="let the model reason first (thinking on), as chat UIs do")
     a = ap.parse_args()
     base = f"http://127.0.0.1:{a.port}"
     gen, secs, dn, da, h = 0, 0.0, 0, 0, hashlib.sha1()
@@ -44,7 +46,9 @@ def main():
     for i in range(a.first, a.first + a.n):
         r = post(base + "/v1/chat/completions", {
             "messages": [{"role": "user", "content": PROMPTS[i]}], "max_tokens": a.max_tokens,
-            "temperature": 0.0, "top_k": 1, "seed": 0, "chat_template_kwargs": {"enable_thinking": False},
+            **({"temperature": 0.0, "top_k": 1} if a.temp <= 0 else
+               {"temperature": a.temp, "top_k": 20, "top_p": 0.95, "min_p": 0.05}),
+            "seed": 0, "chat_template_kwargs": {"enable_thinking": a.think},
         })
         t = r["timings"]
         gen += t["predicted_n"]

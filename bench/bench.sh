@@ -19,7 +19,7 @@ LOG="${LOGDIR:-$REPO/bench}/bench_$LABEL.log"
 "$PY" -m srhpm.launch "$MODEL" "${DRAFT_ARG[@]}" --port "$PORT" --run "$@" > "$LOG" 2>&1 &
 PID=$!
 for _ in $(seq 300); do curl -s "127.0.0.1:$PORT/health" | grep -q ok && break; sleep 2; done
-"$PY" -m bench.dec_bench --port "$PORT" --n "${N:-10}" --max-tokens "${MT:-200}" --label "$LABEL"
+"$PY" -m bench.dec_bench --port "$PORT" --n "${N:-10}" --max-tokens "${MT:-200}" --temp "${TEMP:-0}" --label "$LABEL"
 kill $PID 2>/dev/null
 pkill -f "llama-server.*--port $PORT" 2>/dev/null || taskkill //F //IM llama-server.exe >/dev/null 2>&1
 wait $PID 2>/dev/null

@@ -135,6 +135,21 @@ print(r.choices[0].message.content)</code></pre>
 </section>
 
 <section>
+  <h2>Context window, sampling and thinking</h2>
+  <p>Qwen3.8-27B accepts up to 262k tokens. A q8 KV cache costs nothing measurable in quality and can live in RAM
+  (<code>--ctx 131072 --kv-type q8_0 --kv-ram</code>). What costs speed is the text actually in context:</p>
+  <div class="tbl"><table>
+    <tr><th>Tokens in context</th><th>Time to first token</th><th>Decode</th></tr>
+    <tr><td>short chat (8k window)</td><td>—</td><td>9.6 tok/s</td></tr>
+    <tr><td>9.7k</td><td>57 s</td><td>3.4 tok/s</td></tr>
+    <tr><td>36k</td><td>3.6 min</td><td>1.5 tok/s</td></tr>
+    <tr><td>100k</td><td>11 min</td><td>0.5 tok/s</td></tr>
+  </table></div>
+  <p class="small">Long-context runs summarize Spanish text, where the drafter is weak. Temperature 1 instead of greedy:
+  −9&nbsp;%. Thinking mode on: 7.5 tok/s. Windows up to 32k are comfortable; larger ones suit occasional long documents.</p>
+</section>
+
+<section>
   <h2>What did not work</h2>
   <p>Half of the project is negative results — each idea was attacked first with the cheapest experiment that could
   refute it. A few:</p>

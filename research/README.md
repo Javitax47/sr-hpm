@@ -47,6 +47,19 @@ experiment that could refute it. The lab notes are in Spanish ([notes/](notes/))
 | Small ops on one thread without barriers | A/B + op profile | identical speed; the cost was cache misses, not barriers |
 | N-gram / context retrieval drafting | A/B on chat and long summaries | never triggers (the model paraphrases) |
 | More GPU layers in the spare VRAM | A/B | below ~0.4 GB free WDDM slows everything down |
+| Probabilistic drafting (rejection verification) at temperature 1 | A/B, 10 prompts | 8.8–9.0 vs 8.8 tok/s with greedy drafting |
+
+## Context window, sampling, KV cache (30 oct. 2026)
+
+Unattended queue `queue_ctx_sampling.sh` (lab), 20 runs:
+
+| Measurement | Result |
+|---|---|
+| Temperature 1 (top-k 20, top-p 0.95) vs greedy | 8.8 vs 9.6 tok/s (−9 %): sampled tokens match the drafter less often |
+| Thinking on, temperature 1 | 7.5 tok/s |
+| Window 32k f16 / 128k q8 in RAM / 262k q8 in RAM, short prompts | 8.7 / 8.8 / 6.6 tok/s (8k: 9.7); at 262k the drafter's cache fills the VRAM |
+| KV cache q8_0 vs f16, KLD to Q8_0 | 0.0428 vs 0.0430: no measurable loss |
+| Decode with 9.7k / 36k / 63k / 100k / 190k tokens in context | 3.4 / 1.5 / 0.7 / 0.5 / 0.24 tok/s; prompt processing 110–170 tok/s: CPU attention over the cache becomes the bottleneck |
 
 ## Tools
 

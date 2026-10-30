@@ -77,12 +77,49 @@ Where it fits, and where it does not:
 | ✅ Long generations from moderate prompts: assistants, code, writing, agents | the decode speedup applies to every generated token |
 | ✅ A single user or a single pipeline worker | one request at a time |
 | ⚠️ Several concurrent requests | they queue: the rollback machinery assumes one sequence (`-np 1`) |
-| ⚠️ Huge prompts with very short answers (classification, RAG with a one-line answer) | prompt processing is ~130 tok/s vs ~220 in stock llama.cpp on the reference laptop, so the gain shrinks or reverses |
+| ⚠️ Huge prompts with very short answers (classification, RAG with a one-line answer) | prompt processing is 130–170 tok/s vs ~220 in stock llama.cpp on the reference laptop, so the gain shrinks or reverses |
+| ⚠️ Conversations or documents beyond ~10k tokens | decode slows down as the context fills (see [context window](#context-window-sampling-and-thinking)) |
 | ⚠️ Prose where the drafter is weak (e.g. Spanish summaries) | ~6 tok/s instead of ~10 on the same hardware |
 | ➖ Models that fit in VRAM, MoE models, embeddings / reranking | the launcher falls back to the stock llama.cpp path: no gain, no loss |
 
 Other llama.cpp-based programs built from the patched tree (`llama-cli`, language bindings) should pick up the CPU
 kernels with the same environment variables, but only the server + launcher path is tested.
+
+## Context window, sampling and thinking
+
+Measured on the reference laptop with Qwen3.8-27B (`q_speed1`), 10 prompts each:
+
+**Context window** (`--ctx`, default 8192). Qwen3.8-27B accepts up to 262,144 tokens; only its 16 attention layers keep
+a KV cache (64 KB per token in f16).
+
+| Window | Decode, short prompts | Notes |
+|---|---|---|
+| 8k (default) | 9.6–9.7 tok/s | |
+| 32k, f16 cache on GPU (`--ctx 32768`) | 8.7 tok/s (−10 %) | |
+| 128k, q8 cache in RAM (`--ctx 131072 --kv-type q8_0 --kv-ram`) | 8.8 tok/s (−10 %) | ~4.4 GB of RAM for the cache |
+| 262k, q8 cache in RAM | 6.6 tok/s (−32 %) | the drafter's own cache then fills the VRAM |
+
+A q8 cache costs nothing measurable in quality (KLD to Q8_0: 0.0428 with q8 vs 0.0430 with f16), so use
+`--kv-type q8_0` whenever the window is large. **What the window costs is the text actually in it**: decode slows down as
+the conversation or document grows, because every generated token attends to the whole context on the CPU:
+
+| Tokens in context | Time to first token | Decode |
+|---|---|---|
+| 9.7k | 57 s | 3.4 tok/s |
+| 36k | 3.6 min | 1.5 tok/s |
+| 63k | 6.6 min | 0.7 tok/s |
+| 100k | 11 min | 0.5 tok/s |
+| 190k (262k window) | 29 min | 0.24 tok/s |
+
+(long-context runs are summaries of Spanish text, where the drafter is weak; prompt processing stays at 110–170 tok/s.)
+In practice: windows up to 32k are comfortable; larger windows work for occasional long documents, not for fast chat.
+
+**Sampling.** Benchmarks are greedy. With temperature 1 (top-k 20, top-p 0.95, the web UI's values) decode drops ~9 %
+(9.6 → 8.8 tok/s) because sampled tokens match the drafter less often. `--draft-sampling probabilistic` (the drafter
+samples and the target verifies by rejection, which keeps the distribution exact) does not change that: 8.8–9.0 tok/s.
+
+**Thinking.** With the model's reasoning mode on (the 💡 toggle in the web UI) and temperature 1: 7.5 tok/s. Long chats
+in Spanish with thinking on can be around 4–5 tok/s; turn thinking off for the fastest answers.
 
 ## Which models
 
@@ -155,6 +192,9 @@ The full story — including the ~25 ideas that did **not** work and why — is 
 | `SRHPM_GDN_DIRECT=1`, `SRHPM_GDN_LAZY=1` | in-place / lazy recurrent snapshots (hybrid models) |
 | `SRHPM_DRAFT_KEEP=3`, `SRHPM_DRAFT_PEXT=0.9` | adaptive draft length |
 | `SRHPM_RELAX=δ` | lossy relaxed acceptance (opt-in, `--relax`) |
+
+Launcher options beyond the model and drafter: `--ctx`, `--kv-type {f16,q8_0,q4_0}`, `--kv-ram`,
+`--draft-sampling {greedy,probabilistic}`, `--draft-max`, `--relax`, `--retrieval`, `--vram-gib`, `--host`, `--port`.
 
 Instrumentation for research: `GGML_SRV_PROF`, `GGML_OP_PROF`, `SRHPM_SPEC_PROF`, `SRHPM_PASS_LOG`,
 `SRHPM_LATTICE_LOG`, `SRHPM_ACCEPT_LOG`, `GGML_SRV_DUMP_NAMES`.
