@@ -8,8 +8,8 @@
 #   phase C  prompt processing + decode at 8k / 32k / 64k / 120k tokens of context (128k window, q8 in RAM)
 #   phase D  one ~240k-token prompt (262k window, q8 in RAM)
 set -u
-PUB=/c/Users/Javier/Desktop/SR-HPM/publish
-LAB=/c/Users/Javier/Desktop/SR-HPM/f3
+PUB=$(cd "$(dirname "$0")/../.." && pwd)    # repository root
+LAB=${LAB:-$(cd "$(dirname "$0")" && pwd)}  # guard.sh (commit-charge guard) and keepawake.ps1
 OUT=$HOME/srhpm_runs
 PY=$HOME/.venvs/f0/Scripts/python.exe
 MODEL=$HOME/f0_gguf/q_speed1.gguf
