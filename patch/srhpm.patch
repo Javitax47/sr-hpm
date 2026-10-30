@@ -519,7 +519,7 @@ index 53d39d2..7aeb58a 100644
  }
  
 diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
-index 85e1701..55317b6 100644
+index 85e1701..63d71b8 100644
 --- a/ggml/src/ggml-cpu/ops.cpp
 +++ b/ggml/src/ggml-cpu/ops.cpp
 @@ -11,6 +11,9 @@
@@ -532,7 +532,7 @@ index 85e1701..55317b6 100644
  
  // ggml_compute_forward_dup
  
-@@ -9413,6 +9416,261 @@ static void ggml_flash_attn_ext_reduce_partials(
+@@ -9413,6 +9416,293 @@ static void ggml_flash_attn_ext_reduce_partials(
      }
  }
  
@@ -637,6 +637,18 @@ index 85e1701..55317b6 100644
 +
 +    std::vector<float> M(R), S(R), slope(R);
 +
++    // quantized caches go through the type's dequantizer (f16 / f32 have their own fast paths above)
++    const auto k_to_float = (k->type == GGML_TYPE_F16 || k->type == GGML_TYPE_F32) ? nullptr : ggml_get_type_traits(k->type)->to_float;
++    const auto v_to_float = (v->type == GGML_TYPE_F16 || v->type == GGML_TYPE_F32) ? nullptr : ggml_get_type_traits(v->type)->to_float;
++    std::vector<float> krow(k_to_float ? DK : 0);
++    // quantized K: Q.K with the type's own integer dot product (Q quantized once per tile to the K type's vec_dot
++    // type, as the stock path does), each K row read from the cache once and reused from L1 for the R rows
++    const auto * k_cpu      = ggml_get_type_traits_cpu(k->type);
++    const bool   kq_int     = k_to_float && k_cpu->vec_dot && k_cpu->vec_dot_type != GGML_TYPE_F32 &&
++                              DK % ggml_blck_size(k_cpu->vec_dot_type) == 0;
++    const size_t q_row_size = kq_int ? ggml_row_size(k_cpu->vec_dot_type, DK) : 0;
++    std::vector<uint8_t> Qq(kq_int ? R*q_row_size : 0);
++
 +    if (ith == 0) {
 +        ggml_threadpool_chunk_set(params->threadpool, nth);
 +    }
@@ -655,6 +667,9 @@ index 85e1701..55317b6 100644
 +            M[r] = -INFINITY;
 +            S[r] = 0.0f;
 +            slope[r] = (max_bias > 0.0f) ? (h < n_head_log2 ? powf(m0, h + 1) : powf(m1, 2*(h - n_head_log2) + 1)) : 1.0f;
++            if (kq_int) {
++                ggml_get_type_traits_cpu(k_cpu->vec_dot_type)->from_float(Qf + r*DK, Qq.data() + r*q_row_size, DK);
++            }
 +        }
 +        memset(VKQ,   0, R*DV*sizeof(float));
 +        memset(K_f32, 0, KVT*DK*sizeof(float));
@@ -682,6 +697,14 @@ index 85e1701..55317b6 100644
 +                }
 +            }
 +
++            if (kq_int) {
++                for (int tk = 0; tk < kv_tile; tk++) {
++                    const char * kd = (const char *) k->data + (ic + tk)*nbk1 + g*nbk2;
++                    for (int64_t r = 0; r < R; r++) {
++                        k_cpu->vec_dot((int) DK, KQ + r*KVT + tk, 0, kd, 0, Qq.data() + r*q_row_size, 0, 1);
++                    }
++                }
++            } else {
 +            // K block of this KV head, converted once and transposed: K_f32[dk][kv]
 +            for (int tk = 0; tk < kv_tile; tk++) {
 +                const char * kd = (const char *) k->data + (ic + tk)*nbk1 + g*nbk2;
@@ -689,6 +712,12 @@ index 85e1701..55317b6 100644
 +                    const ggml_fp16_t * kh = (const ggml_fp16_t *) kd;
 +                    for (int64_t dk = 0; dk < DK; dk++) {
 +                        K_f32[dk*KVT + tk] = GGML_CPU_FP16_TO_FP32(kh[dk]);
++                    }
++                } else if (k_to_float) {
++                    // quantized cache (q8_0, q4_0...): dequantized once per GQA group instead of once per row
++                    k_to_float(kd, krow.data(), DK);
++                    for (int64_t dk = 0; dk < DK; dk++) {
++                        K_f32[dk*KVT + tk] = krow[dk];
 +                    }
 +                } else {
 +                    const float * kf = (const float *) kd;
@@ -699,6 +728,7 @@ index 85e1701..55317b6 100644
 +            }
 +            memset(KQ, 0, R*KVT*sizeof(float));
 +            simd_gemm(KQ, Qf, K_f32, R, DK, KVT);
++            }
 +            ggml_vec_scale_f32(R*KVT, KQ, scale);
 +            if (logit_softcap != 0.0f) {
 +                ggml_vec_tanh_f32(R*KVT, KQ, KQ);
@@ -737,6 +767,8 @@ index 85e1701..55317b6 100644
 +                const char * vd = (const char *) v->data + (ic + tk)*nbv1 + g*nbv2;
 +                if (v->type == GGML_TYPE_F16) {
 +                    ggml_cpu_fp16_to_fp32((const ggml_fp16_t *) vd, V32 + tk*DV, DV);
++                } else if (v_to_float) {
++                    v_to_float(vd, V32 + tk*DV, DV);
 +                } else {
 +                    memcpy(V32 + tk*DV, vd, DV*sizeof(float));
 +                }
@@ -794,13 +826,15 @@ index 85e1701..55317b6 100644
  static void ggml_compute_forward_flash_attn_ext_f16(
          const ggml_compute_params * params,
          ggml_tensor * dst) {
-@@ -9461,6 +9719,14 @@ static void ggml_compute_forward_flash_attn_ext_f16(
+@@ -9461,6 +9751,16 @@ static void ggml_compute_forward_flash_attn_ext_f16(
      // When use_ref is set, force the vec-only reference implementation (no tiling, no KV-chunking)
      const bool use_ref = params->use_ref;
  
 +    if (!use_ref && ggml_fa_gqa_small_enabled() && neq1 >= 2 && neq1 <= FA_GQA_MAX_N && neq3 == 1 && nek2 > 0 &&
 +        neq2 % nek2 == 0 && nek2 == nev2 && q->type == GGML_TYPE_F32 && k->type == v->type &&
-+        (k->type == GGML_TYPE_F16 || k->type == GGML_TYPE_F32) && nek1 >= GGML_FA_TILE_KV &&
++        (k->type == GGML_TYPE_F16 || k->type == GGML_TYPE_F32 ||
++         (ggml_get_type_traits(k->type)->to_float && nek0 % ggml_blck_size(k->type) == 0 &&
++          nev0 % ggml_blck_size(v->type) == 0)) && nek1 >= GGML_FA_TILE_KV &&
 +        params->wsize >= ggml_fa_gqa_small_work_size(dst, params->nth)) {
 +        ggml_compute_forward_flash_attn_ext_gqa_small(params, dst);
 +        return;
@@ -809,7 +843,7 @@ index 85e1701..55317b6 100644
      const bool kv_is_f32_or_f16 = (k->type == GGML_TYPE_F32 || k->type == GGML_TYPE_F16);
      const bool use_split_kv_path = !use_ref && (neq1 == 1 && neq3 == 1) && kv_is_f32_or_f16 && (k->type == v->type) && q->type == GGML_TYPE_F32 && nek1 >= 512;
  
-@@ -11096,11 +11362,54 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
+@@ -11096,11 +11396,54 @@ void ggml_compute_forward_solve_tri(const struct ggml_compute_params * params, s
  }
  
  // ggml_compute_forward_gated_delta_net
@@ -865,7 +899,7 @@ index 85e1701..55317b6 100644
  
      ggml_tensor * src_q     = dst->src[0];
      ggml_tensor * src_k     = dst->src[1];
-@@ -11187,7 +11496,51 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+@@ -11187,7 +11530,51 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
          // copy input state into the working buffer and operate in-place
          // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
          const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
@@ -917,7 +951,7 @@ index 85e1701..55317b6 100644
  
          // attn output pointer for first token of this (head, seq)
          float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
-@@ -11239,10 +11592,18 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+@@ -11239,10 +11626,18 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
  
              if (K > 1) {
                  const int64_t target_slot = n_tokens - 1 - t;
@@ -940,7 +974,7 @@ index 85e1701..55317b6 100644
                  }
              }
          }
-@@ -11274,6 +11635,15 @@ static void ggml_compute_forward_gated_delta_net_f32(
+@@ -11274,6 +11669,15 @@ static void ggml_compute_forward_gated_delta_net_f32(
  
      if (ith == 0) {
        ggml_threadpool_chunk_set(params->threadpool, nth);
@@ -956,7 +990,7 @@ index 85e1701..55317b6 100644
      }
  
      ggml_barrier(params->threadpool);
-@@ -11282,13 +11652,43 @@ static void ggml_compute_forward_gated_delta_net_f32(
+@@ -11282,13 +11686,43 @@ static void ggml_compute_forward_gated_delta_net_f32(
  
      int current_chunk = ith;
  

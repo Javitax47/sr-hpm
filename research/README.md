@@ -61,6 +61,19 @@ Unattended queue `queue_ctx_sampling.sh` (lab), 20 runs:
 | KV cache q8_0 vs f16, KLD to Q8_0 | 0.0428 vs 0.0430: no measurable loss |
 | Decode with 9.7k / 36k / 63k / 100k / 190k tokens in context | 3.4 / 1.5 / 0.7 / 0.5 / 0.24 tok/s; prompt processing 110–170 tok/s: CPU attention over the cache becomes the bottleneck |
 
+**Follow-up — grouped attention for quantized caches (kept).** llama.cpp's CPU attention for a q8 cache handled each
+(verified token, query head) row on its own and dequantized the whole cache for each: 24× the traffic. The grouped
+small-batch path (`SRHPM_FA_GQA`) was f16/f32-only; it now covers quantized caches, first dequantizing each K/V row once
+per KV head, then multiplying K in int8 against query rows quantized once per tile (the stock arithmetic: the 36k output
+hash equals the stock run's). `test-backend-ops -o FLASH_ATTN_EXT -b CPU`: 5379/5379 against the reference.
+
+| Tokens in context | Stock | Grouped, K dequantized | Grouped, int8 Q·K |
+|---|---|---|---|
+| 9.7k | 3.4 | 4.9 | 5.2 tok/s |
+| 36k | 1.5 | 4.1 | 4.1 tok/s |
+| 63k | 0.71 | 2.5 | — |
+| 100k | 0.50 | 1.9 | 2.2 tok/s |
+
 ## Tools
 
 `tools/` holds the scripts and micro-benchmarks behind these numbers. They were written for the reference machine

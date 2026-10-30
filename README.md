@@ -101,18 +101,24 @@ a KV cache (64 KB per token in f16).
 
 A q8 cache costs nothing measurable in quality (KLD to Q8_0: 0.0428 with q8 vs 0.0430 with f16), so use
 `--kv-type q8_0` whenever the window is large. **What the window costs is the text actually in it**: decode slows down as
-the conversation or document grows, because every generated token attends to the whole context on the CPU:
+the conversation or document grows, because every verified token attends to the whole context on the CPU.
 
-| Tokens in context | Time to first token | Decode |
-|---|---|---|
-| 9.7k | 57 s | 3.4 tok/s |
-| 36k | 3.6 min | 1.5 tok/s |
-| 63k | 6.6 min | 0.7 tok/s |
-| 100k | 11 min | 0.5 tok/s |
-| 190k (262k window) | 29 min | 0.24 tok/s |
+With a quantized cache, llama.cpp's CPU attention handled each (token, query head) row on its own and dequantized the
+whole cache for every row — 24× the traffic for 4 verified tokens and 6 query heads per KV head. SR-HPM's grouped
+attention (`SRHPM_FA_GQA`) now covers quantized caches: each K row is read once per KV head and multiplied in int8
+(the same arithmetic as the stock path, so the output is identical), and each V row is dequantized once:
 
-(long-context runs are summaries of Spanish text, where the drafter is weak; prompt processing stays at 110–170 tok/s.)
-In practice: windows up to 32k are comfortable; larger windows work for occasional long documents, not for fast chat.
+| Tokens in context | Time to first token | Decode before | **Decode now** |
+|---|---|---|---|
+| 9.7k | 57 s | 3.4 tok/s | **5.2 tok/s** |
+| 36k | 3.6 min | 1.5 tok/s | **4.1 tok/s** |
+| 63k | 6.6 min | 0.7 tok/s | **≥ 2.5 tok/s** |
+| 100k | 11 min | 0.5 tok/s | **2.2 tok/s** |
+| 190k (262k window) | 29 min | 0.24 tok/s | not re-measured |
+
+(long-context runs are summaries of Spanish text, where the drafter is weak; prompt processing stays at 110–170 tok/s;
+the 63k figure is from an intermediate version that dequantized K.) In practice: windows up to 32–64k are comfortable;
+beyond that, time to first token is what limits.
 
 **Sampling.** Benchmarks are greedy. With temperature 1 (top-k 20, top-p 0.95, the web UI's values) decode drops ~9 %
 (9.6 → 8.8 tok/s) because sampled tokens match the drafter less often. `--draft-sampling probabilistic` (the drafter

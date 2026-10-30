@@ -141,11 +141,13 @@ print(r.choices[0].message.content)</code></pre>
   <div class="tbl"><table>
     <tr><th>Tokens in context</th><th>Time to first token</th><th>Decode</th></tr>
     <tr><td>short chat (8k window)</td><td>—</td><td>9.6 tok/s</td></tr>
-    <tr><td>9.7k</td><td>57 s</td><td>3.4 tok/s</td></tr>
-    <tr><td>36k</td><td>3.6 min</td><td>1.5 tok/s</td></tr>
-    <tr><td>100k</td><td>11 min</td><td>0.5 tok/s</td></tr>
+    <tr><td>9.7k</td><td>57 s</td><td>5.2 tok/s <span class="small">(stock path: 3.4)</span></td></tr>
+    <tr><td>36k</td><td>3.6 min</td><td>4.1 tok/s <span class="small">(1.5)</span></td></tr>
+    <tr><td>100k</td><td>11 min</td><td>2.2 tok/s <span class="small">(0.5)</span></td></tr>
   </table></div>
-  <p class="small">Long-context runs summarize Spanish text, where the drafter is weak. Temperature 1 instead of greedy:
+  <p class="small">With a quantized cache, SR-HPM's grouped attention reads each K row once per KV head and multiplies it
+  in int8 (identical output to the stock path) instead of re-reading the whole cache for every verified token and query
+  head: 2.8–4.4× faster decode at 36–100k tokens. Long-context runs summarize Spanish text, where the drafter is weak. Temperature 1 instead of greedy:
   −9&nbsp;%. Thinking mode on: 7.5 tok/s. Windows up to 32k are comfortable; larger ones suit occasional long documents.</p>
 </section>
 
