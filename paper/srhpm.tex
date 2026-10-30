@@ -56,8 +56,11 @@ llama.cpp: its quantized matrix kernels re-decode each weight block for every to
 2.1--2.7$\times$ a 1-token pass (Table~\ref{tab:kernel}). With a strong drafter (DFlash2) stock llama.cpp reaches
 2.7\,\tps{} on Qwen3.8-27B.
 
-SR-HPM starts from a verification kernel that decodes each block once for all tokens, and then follows the cost of a
-decoding step wherever it goes. Our contributions are:
+SR-HPM---\emph{Speculative verification on RAM-resident weights for Heterogeneous PC Memory}---starts from a
+verification kernel that decodes each block once for all tokens, and then follows the cost of a decoding step wherever
+it goes.\footnote{The acronym comes from the project's original proposal, \emph{Speculative Residual $\cdot$
+Hierarchical Precision Memory}; its audit refuted several components, and the name was kept and re-read to describe
+what survived.} Our contributions are:
 \begin{itemize}
 \item small-batch CPU kernels for the quantization formats of modern dynamic quants, including a lossless 4-bit
 re-encoding (C4) that replaces grid lookups by a single shuffle, sign-free paths for offset-coded types, and a
@@ -246,6 +249,14 @@ SR-HPM's gains scale with the drafter's quality.
 chooses between all-GPU, MoE and SR-HPM paths, and places layers by the measured cost of their tensor types. MoE models
 do not benefit---each verified token activates different experts, so verification is not memory-flat.
 
+\paragraph{Integration.} The result is a standard \texttt{llama-server} with an OpenAI-compatible HTTP API, so an
+application, agent framework or pipeline uses it by pointing its base URL at the local server; chat, streaming, JSON
+grammars and tool calls are unchanged and SR-HPM only affects how fast tokens are produced. It pays off where
+generation dominates (assistants, code, writing, agents with moderate prompts). It pays off less, or loses, where long
+prompts precede very short answers: prompt processing runs at ${\sim}130$\,\tps{} against ${\sim}220$ for stock
+llama.cpp on the reference laptop, because fewer layers stream their weights through the GPU per batch. Requests are
+served one at a time.
+
 \section{What did not work}\label{sec:negative}
 
 \begin{table}[t]
@@ -290,7 +301,8 @@ residual stream are ${\sim}16\times$ more sensitive per unit of weighted error.
 
 \section{Limitations and future work}
 
-The fast kernels need x86-64 with AVX2; VNNI and AMX machines and ARM are untested. Rollback assumes one sequence.
+The fast kernels need x86-64 with AVX2; VNNI and AMX machines and ARM are untested. Rollback assumes one sequence,
+so concurrent requests are queued rather than batched, and prompt processing is slower than in stock llama.cpp.
 The dGPU co-verifier is implemented for Windows and CUDA. All measurements are on one laptop; desktop CPUs with DDR5
 and more VRAM shift the balance (more layers on the GPU, more bandwidth), and Linux frees ${\sim}1$\,GB of VRAM
 that WDDM reserves. The two levers left with large margins require training, which is outside the scope of a tool

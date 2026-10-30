@@ -40,6 +40,7 @@ a{color:var(--accent)}
 <body>
 <div class="wrap">
 <header>
+  <p class="small" style="margin:0 0 8px;letter-spacing:.02em"><b>SR-HPM</b> · <b>S</b>peculative verification on <b>R</b>AM-resident weights for <b>H</b>eterogeneous <b>P</b>C <b>M</b>emory</p>
   <h1>Dense LLMs bigger than your GPU, <span>3.6× faster</span></h1>
   <p class="lede">SR-HPM is a llama.cpp patch and a launcher that make speculative decoding pay off when most of a
   model lives in system RAM. A 27B dense model on a 6&nbsp;GB laptop GPU goes from <b>2.7</b> to <b>~10</b>
@@ -116,6 +117,24 @@ python3 -m srhpm.launch model.gguf --draft drafter.gguf --run</code></pre>
 </section>
 
 <section>
+  <h2>Use it from any app</h2>
+  <p>The server SR-HPM starts is a standard <code>llama-server</code> with an <b>OpenAI-compatible API</b>. Any app,
+  agent framework or pipeline that talks to OpenAI — LangChain, LlamaIndex, Open WebUI, Continue, n8n or your own
+  code — uses it by changing its base URL. Chat, streaming, JSON grammars and tool calls work as usual; SR-HPM only
+  changes how fast the tokens come out.</p>
+<pre><code>from openai import OpenAI
+client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="none")
+r = client.chat.completions.create(model="local", messages=[{"role": "user", "content": "Hello!"}])
+print(r.choices[0].message.content)</code></pre>
+  <div class="tbl"><table>
+    <tr><th>Good fit</th><th>Less of a fit</th></tr>
+    <tr><td>Long generations from moderate prompts: assistants, code, writing, agents</td><td>Huge prompts with very short answers (classification, RAG with one-line answers): prompt processing is ~130 tok/s vs ~220 in stock llama.cpp</td></tr>
+    <tr><td>One user, or one pipeline worker at a time</td><td>Many concurrent requests: they queue, one sequence at a time</td></tr>
+    <tr><td>Dense models that do not fit in VRAM, with a drafter</td><td>Models that fit in VRAM, MoE models, embeddings: the launcher falls back to stock llama.cpp (no gain, no loss)</td></tr>
+  </table></div>
+</section>
+
+<section>
   <h2>What did not work</h2>
   <p>Half of the project is negative results — each idea was attacked first with the cheapest experiment that could
   refute it. A few:</p>
@@ -128,6 +147,15 @@ python3 -m srhpm.launch model.gguf --draft drafter.gguf --run</code></pre>
   </ul>
   <p>The full list, with numbers and scripts, is in the <a href="srhpm.pdf">paper</a> and in
   <a href="https://github.com/Javitax47/sr-hpm/tree/main/research">research/</a>.</p>
+</section>
+
+<section>
+  <h2>About the name</h2>
+  <p>The project began as a proposal called <i>Speculative Residual · Hierarchical Precision Memory</i>. Its audit
+  refuted several pieces — a "holographic" context memory among them. What survived and became the tool is
+  speculative verification on the CPU over weights kept in RAM, across the GPU + CPU memory of an ordinary PC, so the
+  acronym was kept and re-read that way. The original proposals are in
+  <a href="https://github.com/Javitax47/sr-hpm/tree/main/research/history">research/history/</a>.</p>
 </section>
 
 <footer>

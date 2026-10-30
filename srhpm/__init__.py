@@ -1,4 +1,5 @@
-"""SR-HPM: fast decoding of dense LLMs larger than the GPU's memory (llama.cpp patch + launcher)."""
+"""SR-HPM (Speculative verification on RAM-resident weights for Heterogeneous PC Memory): fast decoding of dense LLMs
+larger than the GPU's memory (llama.cpp patch + launcher)."""
 import os
 import sys
 from pathlib import Path

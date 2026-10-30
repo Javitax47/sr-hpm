@@ -1,5 +1,7 @@
 # SR-HPM — fast decoding of dense LLMs that do not fit in your GPU
 
+**SR-HPM** = **S**peculative verification on **R**AM-resident weights for **H**eterogeneous **P**C **M**emory.
+
 SR-HPM is a patch for [llama.cpp](https://github.com/ggml-org/llama.cpp) plus a small Python launcher that make
 **dense models larger than the GPU's memory** decode several times faster on ordinary PCs. It splits the model
 between GPU and CPU, verifies speculative drafts on the CPU with kernels built for 2–8 tokens, and attacks every
@@ -47,6 +49,40 @@ it only prints the command it would run.
 <a id="large-pages"></a>**Large pages** (recommended): on Windows run `scripts\grant_large_pages.ps1` as administrator once, then
 sign out and back in; on Linux enable transparent huge pages (`madvise`). The launcher turns them on when available.
 On the reference laptop they gave +10 % in one A/B pair and a tie in the other (identical output).
+
+## Using it from your app or pipeline
+
+What SR-HPM runs is a standard `llama-server` with an **OpenAI-compatible API**, so anything that talks to OpenAI can
+use it by pointing its base URL at the local server — LangChain, LlamaIndex, Open WebUI, Continue, n8n, or your own
+code. The application does not need to know SR-HPM exists; chat, completions, streaming, JSON grammars and tool calls
+come from llama-server unchanged, SR-HPM only changes how fast the tokens are computed.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="none")
+r = client.chat.completions.create(model="local", messages=[{"role": "user", "content": "Hello!"}])
+print(r.choices[0].message.content)
+```
+
+```bash
+curl http://127.0.0.1:8080/v1/chat/completions -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hello!"}]}'
+```
+
+Where it fits, and where it does not:
+
+| | |
+|---|---|
+| ✅ Long generations from moderate prompts: assistants, code, writing, agents | the decode speedup applies to every generated token |
+| ✅ A single user or a single pipeline worker | one request at a time |
+| ⚠️ Several concurrent requests | they queue: the rollback machinery assumes one sequence (`-np 1`) |
+| ⚠️ Huge prompts with very short answers (classification, RAG with a one-line answer) | prompt processing is ~130 tok/s vs ~220 in stock llama.cpp on the reference laptop, so the gain shrinks or reverses |
+| ⚠️ Prose where the drafter is weak (e.g. Spanish summaries) | ~6 tok/s instead of ~10 on the same hardware |
+| ➖ Models that fit in VRAM, MoE models, embeddings / reranking | the launcher falls back to the stock llama.cpp path: no gain, no loss |
+
+Other llama.cpp-based programs built from the patched tree (`llama-cli`, language bindings) should pick up the CPU
+kernels with the same environment variables, but only the server + launcher path is tested.
 
 ## Which models
 
@@ -130,6 +166,13 @@ Instrumentation for research: `GGML_SRV_PROF`, `GGML_OP_PROF`, `SRHPM_SPEC_PROF`
 - The dGPU co-verifier is Windows + CUDA only; on Linux it is simply not used.
 - Gains depend on the drafter: on prose where the drafter is weak (e.g. Spanish summaries) decode drops to ~6 tok/s
   with the same hardware.
+
+## About the name
+
+The project started from a proposal called *Speculative Residual · Hierarchical Precision Memory* (kept in
+[research/history/](research/history/)). Its audit refuted several of its pieces (a "holographic" context memory among
+them); what survived and became the tool is speculative verification on the CPU over weights kept in RAM, on a
+GPU + CPU memory hierarchy. The acronym was kept and re-read accordingly.
 
 ## License
 
