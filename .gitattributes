@@ -1,0 +1,6 @@
+* text=auto
+*.patch -text
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.pdf binary
