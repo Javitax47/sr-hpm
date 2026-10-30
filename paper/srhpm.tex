@@ -278,7 +278,13 @@ llama.cpp's CPU attention for quantized caches; ``grouped'': ours (the 63k figur
 \paragraph{Sampling and thinking.} All other numbers are greedy. At temperature~1 (top-$k$ 20, top-$p$ 0.95) decode
 drops 9\% (9.6$\to$8.8\,\tps) as sampled tokens match the drafter less often. Probabilistic drafting with rejection
 verification, which keeps the sampled distribution exact, does not recover it (8.8--9.0). With the model's reasoning
-mode on, 7.5\,\tps.
+mode on, 7.5\,\tps: reasoning text is harder to draft (acceptance 0.53 vs 0.63).
+
+\paragraph{Shorter answers.} The time a user waits is tokens divided by speed, and the cheapest lever is the first.
+On the same 10 prompts with complete answers (greedy, up to 2000 tokens), a one-line system prompt asking for concise
+answers cuts tokens per answer from 563 to 286 and the time per answer from 57 to 31\,s; a telegraphic
+(``caveman'') style cuts them to 194 tokens and 22\,s ($-61\%$). Decode speed changes by only 2--4\% (telegraphic
+text drafts slightly worse, acceptance 0.71 vs 0.76), and in this set the answers stayed correct.
 
 \paragraph{Generality.} Nothing in the kernels or the launcher is specific to Qwen: the launcher reads any GGUF,
 chooses between all-GPU, MoE and SR-HPM paths, and places layers by the measured cost of their tensor types. MoE models

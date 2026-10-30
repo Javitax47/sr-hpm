@@ -81,3 +81,16 @@ hash equals the stock run's). `test-backend-ops -o FLASH_ATTN_EXT -b CPU`: 5379/
 be rerun anywhere are in [../bench/](../bench/).
 
 `history/` keeps the original proposals and the audit that started the project (Spanish).
+
+## Shorter answers (30 oct. 2026)
+
+`bench/dec_bench.py --system ... --max-tokens 2000`, 10 prompts, greedy, thinking off, two rounds:
+
+| System prompt | Tokens per answer | Decode | Seconds per answer | Acceptance |
+|---|---|---|---|---|
+| none | 563 | 10.2–10.6 tok/s | 56–58 | 0.76 |
+| concise | 286 | 9.9–10.6 tok/s | 30–32 | 0.76 |
+| caveman | 194 | 9.8–10.2 tok/s | 22–23 | 0.71 |
+
+Answers checked by hand on arithmetic, the irrationality proof and the sieve code: all correct.
+

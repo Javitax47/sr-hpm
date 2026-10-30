@@ -152,6 +152,20 @@ print(r.choices[0].message.content)</code></pre>
 </section>
 
 <section>
+  <h2>Shorter answers, shorter waits</h2>
+  <p>What you wait for is tokens ÷ speed. A one-line system prompt asking for brevity cuts the tokens far more than it
+  costs in speed (same 10 prompts, complete answers, two rounds):</p>
+  <div class="tbl"><table>
+    <tr><th>System prompt</th><th>Tokens per answer</th><th>Decode</th><th>Seconds per answer</th></tr>
+    <tr><td>none</td><td>563</td><td>10.2–10.6 tok/s</td><td>56–58 s</td></tr>
+    <tr><td>"Answer concisely: no preamble, no filler…"</td><td>286</td><td>9.9–10.6 tok/s</td><td><b>30–32 s</b></td></tr>
+    <tr><td>caveman ("Respond terse…")</td><td>194</td><td>9.8–10.2 tok/s</td><td><b>22–23 s</b></td></tr>
+  </table></div>
+  <p class="small">Answers stayed correct (arithmetic, proofs, code with tests); preambles and closing summaries go.
+  Thinking mode is ~14 % slower per token on top of the tokens it adds: <code>--thinking off</code> disables it.</p>
+</section>
+
+<section>
   <h2>What did not work</h2>
   <p>Half of the project is negative results — each idea was attacked first with the cheapest experiment that could
   refute it. A few:</p>

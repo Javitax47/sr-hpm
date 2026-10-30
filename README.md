@@ -124,8 +124,27 @@ beyond that, time to first token is what limits.
 (9.6 → 8.8 tok/s) because sampled tokens match the drafter less often. `--draft-sampling probabilistic` (the drafter
 samples and the target verifies by rejection, which keeps the distribution exact) does not change that: 8.8–9.0 tok/s.
 
-**Thinking.** With the model's reasoning mode on (the 💡 toggle in the web UI) and temperature 1: 7.5 tok/s. Long chats
-in Spanish with thinking on can be around 4–5 tok/s; turn thinking off for the fastest answers.
+**Thinking.** With the model's reasoning mode on (the 💡 toggle in the web UI) and temperature 1: 7.5 tok/s, 14 %
+fewer tokens per second than with it off at the same temperature, because reasoning text is harder to draft
+(acceptance 0.53 vs 0.63), on top of the extra tokens it writes. `--thinking off` turns it off server-wide.
+
+## Shorter answers: the biggest lever on the time you wait
+
+What you wait for is tokens ÷ speed. Asking the model to be brief cuts the tokens far more than it costs in speed.
+Same 10 prompts, complete answers (up to 2000 tokens), greedy, thinking off, two rounds:
+
+| System prompt | Tokens per answer | Decode | **Seconds per answer** |
+|---|---|---|---|
+| none | 563 | 10.2–10.6 tok/s | 56–58 s |
+| concise¹ | 286 (−49 %) | 9.9–10.6 tok/s | **30–32 s (−46 %)** |
+| caveman² | 194 (−66 %) | 9.8–10.2 tok/s | **22–23 s (−61 %)** |
+
+¹ `Answer concisely: no preamble, no filler, no repetition, no closing summary. Keep code, numbers and technical terms exact.`
+² `Respond terse like smart caveman. Drop articles, filler, pleasantries and hedging. Fragments OK. Short synonyms. Technical terms and code exact.`
+
+The answers stayed correct in this set (arithmetic, proofs, code with docstrings and tests); what goes is the preamble,
+the step-by-step decoration and the closing summary. Telegraphic text is slightly harder to draft (acceptance 0.71 vs
+0.76), which costs 2–4 % of speed. Put one of these lines in your app's system prompt; it works with any client.
 
 ## Which models
 
@@ -199,7 +218,7 @@ The full story — including the ~25 ideas that did **not** work and why — is 
 | `SRHPM_DRAFT_KEEP=3`, `SRHPM_DRAFT_PEXT=0.9` | adaptive draft length |
 | `SRHPM_RELAX=δ` | lossy relaxed acceptance (opt-in, `--relax`) |
 
-Launcher options beyond the model and drafter: `--ctx`, `--kv-type {f16,q8_0,q4_0}`, `--kv-ram`,
+Launcher options beyond the model and drafter: `--ctx`, `--kv-type {f16,q8_0,q4_0}`, `--kv-ram`, `--thinking {auto,on,off}`,
 `--draft-sampling {greedy,probabilistic}`, `--draft-max`, `--relax`, `--retrieval`, `--vram-gib`, `--host`, `--port`.
 
 Instrumentation for research: `GGML_SRV_PROF`, `GGML_OP_PROF`, `SRHPM_SPEC_PROF`, `SRHPM_PASS_LOG`,

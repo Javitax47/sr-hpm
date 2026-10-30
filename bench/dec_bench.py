@@ -39,13 +39,17 @@ def main():
     ap.add_argument("--label", default="")
     ap.add_argument("--temp", type=float, default=0.0, help="0 = greedy; > 0 samples with top-k 20, top-p 0.95, min-p 0.05")
     ap.add_argument("--think", action="store_true", help="let the model reason first (thinking on), as chat UIs do")
+    ap.add_argument("--system", default=None, help="system prompt (e.g. an instruction to answer concisely)")
+    ap.add_argument("--save", default=None, help="write the prompts and answers to this JSON file")
     a = ap.parse_args()
     base = f"http://127.0.0.1:{a.port}"
     gen, secs, dn, da, h = 0, 0.0, 0, 0, hashlib.sha1()
-    per = []
+    per, wall, ntok = [], [], []
+    sysmsg = [{"role": "system", "content": a.system}] if a.system else []
+    answers = []
     for i in range(a.first, a.first + a.n):
         r = post(base + "/v1/chat/completions", {
-            "messages": [{"role": "user", "content": PROMPTS[i]}], "max_tokens": a.max_tokens,
+            "messages": sysmsg + [{"role": "user", "content": PROMPTS[i]}], "max_tokens": a.max_tokens,
             **({"temperature": 0.0, "top_k": 1} if a.temp <= 0 else
                {"temperature": a.temp, "top_k": 20, "top_p": 0.95, "min_p": 0.05}),
             "seed": 0, "chat_template_kwargs": {"enable_thinking": a.think},
@@ -56,12 +60,20 @@ def main():
         dn += t.get("draft_n") or 0
         da += t.get("draft_n_accepted") or 0
         h.update(r["choices"][0]["message"]["content"].encode())
+        answers.append({"prompt": PROMPTS[i], "answer": r["choices"][0]["message"]["content"], "tokens": t["predicted_n"]})
         per.append(t["predicted_per_second"])
+        ntok.append(t["predicted_n"])
+        wall.append((t["prompt_ms"] + t["predicted_ms"]) / 1e3)
     acc = da / dn if dn else 0.0
     # each verification pass yields its accepted drafts + 1 token: passes = generated - accepted
     tau = gen / (gen - da) if gen > da else 0.0
     print(f"[dec] {a.label:24s} {gen / secs:5.2f} tok/s  acc {acc:.3f}  tau {tau:.2f}  per-prompt "
           + " ".join(f"{x:4.1f}" for x in per) + f"  hash {h.hexdigest()[:10]}", flush=True)
+    print(f"[ans] {a.label:24s} tokens per answer {gen / len(ntok):6.1f}  seconds per answer {sum(wall) / len(wall):6.1f}  "
+          f"total {sum(wall):6.1f} s  per-prompt tokens " + " ".join(str(x) for x in ntok), flush=True)
+    if a.save:
+        with open(a.save, "w", encoding="utf-8") as f:
+            json.dump({"label": a.label, "system": a.system, "answers": answers}, f, ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":

@@ -165,6 +165,8 @@ def main():
                     help="probabilistic: the DFlash2 drafter samples and the target verifies by rejection, which keeps "
                          "the sampled distribution exact and accepts more drafts at temperature > 0")
     ap.add_argument("--draft-max", type=int, default=None, help="override the maximum draft length")
+    ap.add_argument("--thinking", choices=["auto", "on", "off"], default="auto",
+                    help="reasoning mode of the model; off answers faster (fewer tokens, and each one cheaper to draft)")
     ap.add_argument("--kv-type", choices=["f16", "q8_0", "q4_0"], default="f16",
                     help="KV cache precision (q8_0 halves its memory for long contexts)")
     ap.add_argument("--kv-ram", action="store_true", help="keep the whole KV cache in system RAM (no VRAM for context)")
@@ -181,6 +183,8 @@ def main():
     env, args, why = plan(a.model, a.draft, a.ctx, host, a.retrieval, server, a.kv_type, a.kv_ram)
     if a.relax > 0 and a.draft:
         env["SRHPM_RELAX"] = str(a.relax)
+    if a.thinking != "auto":
+        args += ["--reasoning", a.thinking]
     if a.draft and a.draft_sampling == "probabilistic":
         args += ["--spec-draft-sampling", "probabilistic"]
     if a.draft and a.draft_max is not None:
